@@ -3,14 +3,9 @@ dub.selections.json
 docs.json
 __dummy.html
 docs/
-xmlser.so
-xmlser.dylib
-xmlser.dll
-xmlser.a
-xmlser.lib
-xmlser-test-*
-xmlser
+dxml.*
 *.exe
+*.a
 *.o
 *.obj
 *.lst

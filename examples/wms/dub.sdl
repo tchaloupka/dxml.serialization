@@ -1,6 +1,8 @@
-name "dxml-serialization"
+name "wms"
 description "A minimal D application."
 authors "Tomáš Chaloupka"
 copyright "Copyright © 2018, Tomáš Chaloupka"
 license "BSL-1.0"
-dependency "dxml" version="~>0.2.3"
+
+dependency "dxml-serialization" path="../.."
+dependency "vibe-d:data" version="~>0.8.2"

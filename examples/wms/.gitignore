@@ -1,0 +1,12 @@
+.dub
+wms
+wms.dylib
+wms-test-*
+*.exe
+*.o
+*.a
+*.lib
+*.dll
+*.so
+*.obj
+*.lst
