@@ -43,7 +43,7 @@ struct Service
 	string description;
 
 	/// List of keywords or keyword phrases to help catalog searching
-	KeywordList keywordList;
+	@xmlOptional Nullable!KeywordList keywordList;
 
 	/++
 		An OnlineResource is typically an HTTP URL.  The URL is placed in
@@ -136,9 +136,14 @@ struct Capability
 {
 	Request request;
 	WmsException exception;
-	//TODO: extended
+	@xmlOptional _ExtendedCapabilities[] extended;
 	@xmlName("Layer") Layer[] layers; /// Nested list of zero or more map Layers offered by this server.
 }
+
+/++
+	Individual service providers may use this element to report extended capabilities.
++/
+abstract class _ExtendedCapabilities {}
 
 /// Description of map Layer offered by this server.
 struct Layer
@@ -155,7 +160,7 @@ struct Layer
 
 	/// The BoundingBox attributes indicate the limits of the bounding box in units of the specified coordinate reference system.
 	@xmlOptional @xmlName("BoundingBox") BoundingBox[] boundingBoxes;
-	@xmlOptional Nullable!Dimension dimension;
+	@xmlOptional @xmlName("Dimension") Dimension[] dimensions;
 
 	@xmlOptional Nullable!Attribution attribution;
 	@xmlOptional @xmlName("AuthorityURL") AuthorityURL[] authorityURLs;
@@ -319,6 +324,7 @@ struct Dimension
 	@xmlAttr @xmlOptional Nullable!bool multipleValues;
 	@xmlAttr @xmlOptional Nullable!bool nearestValue;
 	@xmlAttr @xmlOptional Nullable!bool current;
+	@xmlText string value;
 }
 
 /++
@@ -355,8 +361,7 @@ struct Request
 	OperationType getCapabilities;
 	OperationType getMap;
 	@xmlOptional Nullable!OperationType getFeatureInfo;
-
-	//TODO: Extended operations
+	@xmlOptional _ExtendedOperation[] extended;
 }
 
 /++
@@ -364,6 +369,12 @@ struct Request
 	formats and the online resource.
 +/
 struct OperationType
+{
+	@xmlName("Format") string[] formats; /// Supported operation mime types
+	@xmlName("DCPType") DCPType[] dcpTypes;
+}
+
+abstract class _ExtendedOperation
 {
 	@xmlName("Format") string[] formats; /// Supported operation mime types
 	@xmlName("DCPType") DCPType[] dcpTypes;

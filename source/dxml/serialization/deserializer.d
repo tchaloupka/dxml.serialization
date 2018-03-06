@@ -42,6 +42,11 @@ T deserializeImpl(T, R)(ref R range, ref Context ctx)
 if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)) || is(T == class)))
 {
 	static if (is(T == struct)) T res = T.init;
+	else static if (isAbstractClass!T)
+	{
+		//TODO
+		T res;
+	}
 	else T res = new T();
 
 	// read attributes
@@ -114,52 +119,70 @@ if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)
 				enum opt = hasOptional!sym;
 				enforce!XMLDeserializationException(!range.empty || opt, "Xml range is already empty. Cannot deserialize " ~ T.stringof);
 
-				if (range.front.type == EntityType.elementStart)
+				// handle text values
+				static if (isTextValue!sym)
 				{
-					if (isMemberName(range.front.name, mname))
-					{
-						static if (hasSkip!sym)
-						{
-							logf("Skipping: %s.%s", ctx.path, range.front.name);
-							range = range.skipContents();
-							range.popFront();
-						}
-						else
-						{
-							enforce!XMLDeserializationException(range.front.type == EntityType.elementStart, "Element start expected");
-							immutable lpath = ctx.path.length;
-							ctx.level++;
-							ctx.path ~= "."; ctx.path ~= range.front.name;
-							scope (exit)
-							{
-								ctx.level--;
-								ctx.path.length = lpath;
-							}
-							__traits(getMember, res, member) = deserialize!mtype(range, ctx);
-						}
-					}
-					else
-					{
-						// unexpected element, try next if this one is optional
-						enforce!XMLDeserializationException(
-							opt,
-							format!"Unexpected element: %s.%s, expected: %s.%s"(ctx.path, range.front.name, ctx.path, mname)
-						);
-					}
-				}
-				else if (range.front.type == EntityType.text)
-				{
-					static if (isTextValue!sym)
+					if (range.front.type == EntityType.text)
 					{
 						static assert (isSomeString!mtype, "Text attribute valid only for string types");
 						__traits(getMember, res, member) = range.front.text;
 						range.popFront();
 					}
-					else enforce!XMLDeserializationException(false, format!"Unexpected EntityType: %s"(range.front.type));
+					else
+					{
+						enforce!XMLDeserializationException(
+							range.front.type == EntityType.elementEnd,
+							format!"Unexpected EntityType: %s"(range.front.type)
+						);
+					}
 				}
-				else if (range.front.type == EntityType.elementEnd)
+				else
 				{
-					enforce!XMLDeserializationException(opt, format!"Missing non optional element %s.%s"(ctx.path, mname));
+					if (range.front.type == EntityType.elementStart)
+					{
+						import std.algorithm : canFind;
+						if (range.front.name.canFind(":")) // FIXME: Add support for namespaces
+						{
+							logf("Skipping unknown element: %s", range.front.name);
+							range = range.skipContents();
+							range.popFront();
+						}
+						else if (isMemberName(range.front.name, mname))
+						{
+							static if (hasSkip!sym)
+							{
+								logf("Skipping: %s.%s", ctx.path, range.front.name);
+								range = range.skipContents();
+								range.popFront();
+							}
+							else
+							{
+								enforce!XMLDeserializationException(range.front.type == EntityType.elementStart, "Element start expected");
+								immutable lpath = ctx.path.length;
+								ctx.level++;
+								ctx.path ~= "."; ctx.path ~= range.front.name;
+								scope (exit)
+								{
+									ctx.level--;
+									ctx.path.length = lpath;
+								}
+								__traits(getMember, res, member) = deserialize!mtype(range, ctx);
+							}
+						}
+						else
+						{
+							// unexpected element, try next if this one is optional
+							enforce!XMLDeserializationException(
+								opt,
+								format!"Unexpected element: %s.%s, expected: %s.%s"(ctx.path, range.front.name, ctx.path, mname)
+							);
+						}
+					}
+					else if (range.front.type == EntityType.elementEnd)
+					{
+						enforce!XMLDeserializationException(opt, format!"Missing non optional element %s.%s"(ctx.path, mname));
+					}
+					else enforce!XMLDeserializationException(false, format!"Unexpected EntityType: %s"(range.front.type));
 				}
 			}
 		}
@@ -171,7 +194,7 @@ if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)
 	{
 		enforce!XMLDeserializationException(
 			range.front.type == EntityType.elementEnd,
-			format!"Unexpected elements at the end of %s"(ctx.path)
+			format!"Unexpected elements at the end of %s: %s"(ctx.path, range.front.type)
 		);
 		range.popFront();
 	}
