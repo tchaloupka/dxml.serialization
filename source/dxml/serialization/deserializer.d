@@ -3,6 +3,8 @@ module dxml.serialization.deserializer;
 import dxml.parser;
 import dxml.serialization.attrs;
 import std.conv : to;
+import std.datetime.date : Date, DateTime, TimeOfDay;
+import std.datetime.systime : SysTime;
 import std.exception : enforce;
 import std.experimental.logger;
 import std.format : format;
@@ -10,6 +12,8 @@ import std.meta;
 import std.range : ElementType, isForwardRange;
 import std.traits;
 import std.typecons : Nullable;
+
+version(unittest) { import unit_threaded; }
 
 T deserialize(T, R)(R input) if (isForwardRange!R && isSomeChar!(ElementType!R))
 {
@@ -23,6 +27,8 @@ T deserialize(T, R)(R input) if (isForwardRange!R && isSomeChar!(ElementType!R))
 	ctx.path = r.front.name;
 	return deserialize!T(r, ctx);
 }
+
+private:
 
 T deserialize(T, R)(ref R range, ref Context ctx) if (is(R : EntityRange!(C), C...))
 {
@@ -39,7 +45,15 @@ T deserialize(T, R)(ref R range, ref Context ctx) if (is(R : EntityRange!(C), C.
 }
 
 T deserializeImpl(T, R)(ref R range, ref Context ctx)
-if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)) || is(T == class)))
+if (
+	is(R : EntityRange!(C), C...)
+	&& (
+		(
+			is(T == struct)
+			&& !is(T : Nullable!U, U)
+			&& !is(T == Date) && !is(T == DateTime) && !is(T == TimeOfDay) && !is(T == SysTime))
+		|| is(T == class))
+	)
 {
 	static if (is(T == struct)) T res = T.init;
 	else static if (isAbstractClass!T)
@@ -124,8 +138,7 @@ if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)
 				{
 					if (range.front.type == EntityType.text)
 					{
-						static assert (isSomeString!mtype, "Text attribute valid only for string types");
-						__traits(getMember, res, member) = range.front.text;
+						__traits(getMember, res, member) = range.front.text.parse!mtype;
 						range.popFront();
 					}
 					else
@@ -182,7 +195,7 @@ if (is(R : EntityRange!(C), C...) && ((is(T == struct) && !is(T : Nullable!U, U)
 					{
 						enforce!XMLDeserializationException(opt, format!"Missing non optional element %s.%s"(ctx.path, mname));
 					}
-					else enforce!XMLDeserializationException(false, format!"Unexpected EntityType: %s"(range.front.type));
+					else enforce!XMLDeserializationException(false, format!"Unexpected EntityType: %s for %s"(range.front.type, mname));
 				}
 			}
 		}
@@ -208,31 +221,15 @@ T deserializeImpl(T, R)(ref R range, ref Context ctx) if (is(T : Nullable!U, U))
 	return T(deserializeImpl!(TemplateArgsOf!T[0])(range, ctx));
 }
 
-/// Enum type deserialization
-T deserializeImpl(T, R)(ref R range, ref Context ctx) if (is(T == enum))
+/// Basic types deserialization
+T deserializeImpl(T, R)(ref R range, ref Context ctx)
+if (
+	is(T == enum) || isNumeric!T || is(T == bool)
+	|| is(T == Date) || is(T == DateTime) || is(T == TimeOfDay) || is(T == SysTime)
+)
 {
 	range.popFront();
-	T res = range.front.text.to!T;
-	range.popFront();
-	range.popFront();
-	return res;
-}
-
-/// Numeric type deserialization
-T deserializeImpl(T, R)(ref R range, ref Context ctx) if (isNumeric!T && !is(T == enum))
-{
-	range.popFront();
-	T res = range.front.text.to!T;
-	range.popFront();
-	range.popFront();
-	return res;
-}
-
-/// Bool type deserialization
-T deserializeImpl(T, R)(ref R range, ref Context ctx) if (is(T == bool))
-{
-	range.popFront();
-	range.front.text.parse!T;
+	T res = range.front.text.parse!T;
 	range.popFront();
 	range.popFront();
 	return res;
@@ -322,14 +319,128 @@ alias hasOptional(alias S) = hasUDA!(S, XmlOptionalAttribute);
 alias hasSkip(alias S) = hasUDA!(S, XmlSkipAttribute);
 alias isTextValue(alias S) = hasUDA!(S, XmlTextAttribute);
 
-T parse(T)(string value) if(is(T == bool))
+
+// Helper for string conversions with special type values handling
+T parse(T)(string value)
 {
-	if (value == "0") return false;
-	if (value == "1") return true;
-	return value.to!bool;
+	static if (is(T == bool))
+	{
+		if (value == "0") return false;
+		if (value == "1") return true;
+		return value.to!bool;
+	}
+	//TimeZone is dropped from TimeOfDay, Date and DateTime types
+	else static if (is(T == Date)) return Date.fromISOExtString(value.length > 10 ? value[0..10] : value);
+	else static if (is(T == DateTime)) return DateTime.fromISOExtString(value.length > 19 ? value[0..19] : value);
+	else static if (is(T == TimeOfDay)) return TimeOfDay.fromISOExtString(value.length > 8 ? value[0..8] : value);
+	else static if (is(T == SysTime)) return SysTime.fromISOExtString(value);
+
+	// default conversion
+	else return value.to!T;
 }
 
-T parse(T)(string value) if(!is(T == bool))
+@("Single text value")
+@system unittest
 {
-	return value.to!T;
+	`<foo>bar</foo>`.deserialize!string.shouldEqual("bar");
+}
+
+@("Single int number")
+@system unittest
+{
+	`<foo>42</foo>`.deserialize!int.shouldEqual(42);
+}
+
+@("Single float number")
+@system unittest
+{
+	`<foo>42.1</foo>`.deserialize!double.shouldEqual(42.1);
+}
+
+@("Single bool")
+@system unittest
+{
+	`<foo>true</foo>`.deserialize!bool.shouldBeTrue;
+	`<foo>false</foo>`.deserialize!bool.shouldBeFalse;
+	`<foo>1</foo>`.deserialize!bool.shouldBeTrue;
+	`<foo>0</foo>`.deserialize!bool.shouldBeFalse;
+}
+
+@("Single Date value")
+@system unittest
+{
+	`<foo>2002-09-24</foo>`.deserialize!Date.shouldEqual(Date(2002, 9, 24));
+	`<foo>2002-09-24+06:00</foo>`.deserialize!Date.shouldEqual(Date(2002, 9, 24));
+	`<foo>2002-09-24Z</foo>`.deserialize!Date.shouldEqual(Date(2002, 9, 24));
+}
+
+@("Single TimeOfDay value")
+@system unittest
+{
+	`<foo>09:01:42</foo>`.deserialize!TimeOfDay.shouldEqual(TimeOfDay(9, 1, 42));
+	`<foo>09:30:10Z</foo>`.deserialize!TimeOfDay.shouldEqual(TimeOfDay(9, 30, 10));
+	`<foo>09:30:10-06:00</foo>`.deserialize!TimeOfDay.shouldEqual(TimeOfDay(9, 30, 10));
+}
+
+@("Single SysTime value")
+@system unittest
+{
+	`<foo>2002-05-30T09:00:00</foo>`.deserialize!DateTime.shouldEqual(DateTime(2002, 5, 30, 9, 0, 0));
+	`<foo>2002-05-30T09:30:10.5</foo>`.deserialize!DateTime.shouldEqual(DateTime(2002, 5, 30, 9, 30, 10));
+	`<foo>2002-05-30T09:30:10-06:00</foo>`.deserialize!DateTime.shouldEqual(DateTime(2002, 5, 30, 9, 30, 10));
+}
+
+@("Single SysTime value")
+@system unittest
+{
+	import core.time : msecs;
+	import std.datetime.systime : UTC;
+
+	`<foo>2002-05-30T09:00:00</foo>`.deserialize!SysTime.shouldEqual(SysTime(DateTime(2002, 5, 30, 9, 0, 0)));
+	`<foo>2002-05-30T09:30:10.5</foo>`.deserialize!SysTime.shouldEqual(SysTime(DateTime(2002, 5, 30, 9, 30, 10), 500.msecs));
+	`<foo>2002-05-30T09:30:10-06:00</foo>`.deserialize!SysTime.toUTC.shouldEqual(SysTime(DateTime(2002, 5, 30, 15, 30, 10), UTC()));
+}
+
+@("Empty object")
+@system unittest
+{
+	struct Foo {}
+	`<foo></foo>`.deserialize!Foo.shouldEqual(Foo.init);
+}
+
+@("Simple object with attribute")
+@system unittest
+{
+	struct Product { @xmlAttr int pid; }
+	`<product pid="42"/>`.deserialize!Product.shouldEqual(Product(42));
+}
+
+@("Simple object with attribute and text value")
+@system unittest
+{
+	struct Food { @xmlAttr string type; @xmlText string value; }
+	`<food type="dessert">Ice cream</food>`.deserialize!Food.shouldEqual(Food("dessert", "Ice cream"));
+}
+
+@("Simple complex object")
+@system unittest
+{
+	struct Employee { string firstname; string lastname; }
+	enum xml = `
+		<employee>
+			<firstname>John</firstname>
+			<lastname>Smith</lastname>
+		</employee>`;
+
+	xml.deserialize!Employee.shouldEqual(Employee("John", "Smith"));
+}
+
+@("Text value with element")
+@system unittest
+{
+	struct DateVal { @xmlAttr string lang; @xmlText Date dt; }
+	struct Desc { @xmlText string val; DateVal date; }
+	enum xml = `<description>It happened on<date lang="norwegian">2015-01-02</date></description>`;
+
+	xml.deserialize!Desc.shouldEqual(Desc("It happened on", DateVal("norwegian", Date(2015, 1, 2))));
 }

@@ -2,8 +2,9 @@
 dub.selections.json
 docs.json
 __dummy.html
+bin/
 docs/
-dxml.*
+dxml-*
 *.exe
 *.a
 *.o
