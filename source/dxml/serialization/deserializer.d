@@ -13,7 +13,10 @@ import std.range : ElementType, isForwardRange;
 import std.traits;
 import std.typecons : Nullable;
 
-version(unittest) { import unit_threaded; }
+version(unittest)
+{
+    version (Have_unit_threaded) import unit_threaded;
+}
 
 T deserialize(T, R)(R input) if (isForwardRange!R && isSomeChar!(ElementType!R))
 {
