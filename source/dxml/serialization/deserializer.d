@@ -394,7 +394,7 @@ T parse(T)(string value)
 @system unittest
 {
 	import core.time : msecs;
-	import std.datetime.systime : UTC;
+	import std.datetime.timezone : UTC;
 
 	`<foo>2002-05-30T09:00:00</foo>`.deserialize!SysTime.shouldEqual(SysTime(DateTime(2002, 5, 30, 9, 0, 0)));
 	`<foo>2002-05-30T09:30:10.5</foo>`.deserialize!SysTime.shouldEqual(SysTime(DateTime(2002, 5, 30, 9, 30, 10), 500.msecs));
