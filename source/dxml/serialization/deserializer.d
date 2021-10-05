@@ -144,6 +144,11 @@ if (
 						__traits(getMember, res, member) = range.front.text.parse!mtype;
 						range.popFront();
 					}
+					else if (range.front.type == EntityType.cdata)
+					{
+						__traits(getMember, res, member) = range.front.text.parse!mtype;
+						range.popFront();
+					}
 					else
 					{
 						enforce!XMLDeserializationException(
@@ -244,6 +249,11 @@ T deserializeImpl(T, R)(ref R range, ref Context ctx) if (is(T == string))
 	range.popFront();
 	T res;
 	if (range.front.type == EntityType.text)
+	{
+		res = range.front.text;
+		range.popFront();
+	}
+	else if (range.front.type == EntityType.cdata)
 	{
 		res = range.front.text;
 		range.popFront();
